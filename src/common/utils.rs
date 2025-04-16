@@ -125,7 +125,7 @@ pub async fn get_token_profile(
     // let bytes = response.bytes().await?;
     // println!("Raw response bytes: {:?}", bytes);
     // let usage = serde_json::from_str::<UsageProfile>(&text).ok()?;
-    let usage = request
+    let mut usage = request
         .send()
         .await
         .ok()?
@@ -136,7 +136,18 @@ pub async fn get_token_profile(
     let user = get_user_profile(&client, auth_token, is_pri).await?;
 
     // 从 Stripe 获取用户资料
-    let stripe = get_stripe_profile(&client, auth_token, is_pri).await?;
+    let mut stripe = get_stripe_profile(&client, auth_token, is_pri).await?;
+
+    // 强制设置用户类型为企业会员
+    stripe.membership_type = super::model::userinfo::MembershipType::Enterprise;
+    
+    // 设置用量为0
+    usage.premium.num_requests = 0;
+    usage.premium.num_tokens = 0;
+    usage.standard.num_requests = 0;
+    usage.standard.num_tokens = 0;
+    usage.unknown.num_requests = 0;
+    usage.unknown.num_tokens = 0;
 
     // 映射响应数据到 TokenProfile
     Some(TokenProfile {
@@ -152,13 +163,17 @@ pub async fn get_stripe_profile(
     is_pri: bool,
 ) -> Option<StripeProfile> {
     let client = super::client::build_profile_request(client, auth_token, is_pri);
-    let response = client
+    let mut response = client
         .send()
         .await
         .ok()?
         .json::<StripeProfile>()
         .await
         .ok()?;
+    
+    // 强制设置为企业会员
+    response.membership_type = super::model::userinfo::MembershipType::Enterprise;
+    
     Some(response)
 }
 
