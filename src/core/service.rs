@@ -781,62 +781,35 @@ pub async fn handle_chat(
         while !decoder.lock().await.is_first_result_ready() {
             match stream.next().await {
                 Some(Ok(chunk)) => {
-                    let decode_result = decoder.lock().await.decode(&chunk, convert_web_ref);
-                    if let Err(err) = decode_result {
-                        match err {
-                            StreamError::RateLimitExceeded => {
-                                // 遇到速率限制错误时，继续处理而不中断
-                                eprintln!("[警告] 速率限制错误，但继续处理");
-                                continue;
-                            },
-                            StreamError::ChatError(error) => {
-                                let error_response = error.into_error_response();
-                                // 更新请求日志为失败
-                                {
-                                    let mut state = state.lock().await;
-                                    if let Some(log) = state
-                                        .request_manager
-                                        .request_logs
-                                        .iter_mut()
-                                        .rev()
-                                        .find(|log| log.id == current_id)
-                                    {
-                                        log.status = LogStatus::Failure;
-                                        log.error =
-                                            ErrorInfo::Error(intern_string(error_response.native_code()));
-                                        if let Some(detail) = error_response.details() {
-                                            log.error.add_detail(&detail)
-                                        }
-                                        log.timing.total =
-                                            format_time_ms(start_time.elapsed().as_secs_f64());
-                                        state.request_manager.error_requests += 1;
-                                    }
+                    if let Err(StreamError::ChatError(error)) =
+                        decoder.lock().await.decode(&chunk, convert_web_ref)
+                    {
+                        let error_response = error.into_error_response();
+                        // 更新请求日志为失败
+                        {
+                            let mut state = state.lock().await;
+                            if let Some(log) = state
+                                .request_manager
+                                .request_logs
+                                .iter_mut()
+                                .rev()
+                                .find(|log| log.id == current_id)
+                            {
+                                log.status = LogStatus::Failure;
+                                log.error =
+                                    ErrorInfo::Error(intern_string(error_response.native_code()));
+                                if let Some(detail) = error_response.details() {
+                                    log.error.add_detail(&detail)
                                 }
-                                return Err((
-                                    error_response.status_code(),
-                                    Json(error_response.into_common()),
-                                ));
-                            },
-                            _ => {
-                                // 其他错误类型照常处理
-                                let mut state = state.lock().await;
-                                if let Some(log) = state
-                                    .request_manager
-                                    .request_logs
-                                    .iter_mut()
-                                    .rev()
-                                    .find(|log| log.id == current_id)
-                                {
-                                    log.status = LogStatus::Failure;
-                                    log.error = ErrorInfo::Error(intern_string(format!("Stream error: {}", err)));
-                                    state.request_manager.error_requests += 1;
-                                }
-                                return Err((
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    Json(ChatError::RequestFailed(format!("Stream error: {}", err)).to_json()),
-                                ));
+                                log.timing.total =
+                                    format_time_ms(start_time.elapsed().as_secs_f64());
+                                state.request_manager.error_requests += 1;
                             }
                         }
+                        return Err((
+                            error_response.status_code(),
+                            Json(error_response.into_common()),
+                        ));
                     }
                 }
                 Some(Err(e)) => {
@@ -917,11 +890,6 @@ pub async fn handle_chat(
                             Ok(msgs) => msgs,
                             Err(e) => {
                                 match e {
-                                    // 处理速率限制错误
-                                    StreamError::RateLimitExceeded => {
-                                        eprintln!("[警告] 速率限制错误，但继续处理");
-                                        return Ok(Bytes::new());
-                                    },
                                     // 处理普通空流错误
                                     StreamError::EmptyStream => {
                                         eprintln!(

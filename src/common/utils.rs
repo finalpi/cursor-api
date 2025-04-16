@@ -110,17 +110,56 @@ impl TrimNewlines for String {
     }
 }
 
+pub async fn get_token_profile(
+    client: Client,
+    auth_token: &str,
+    is_pri: bool,
+) -> Option<TokenProfile> {
+    let user_id = extract_user_id(auth_token)?;
+
+    // 构建请求客户端
+    let request = super::client::build_usage_request(&client, &user_id, auth_token, is_pri);
+
+    // 发送请求并获取响应
+    // let response = client.send().await.ok()?;
+    // let bytes = response.bytes().await?;
+    // println!("Raw response bytes: {:?}", bytes);
+    // let usage = serde_json::from_str::<UsageProfile>(&text).ok()?;
+    let usage = request
+        .send()
+        .await
+        .ok()?
+        .json::<UsageProfile>()
+        .await
+        .ok()?;
+
+    let user = get_user_profile(&client, auth_token, is_pri).await?;
+
+    // 从 Stripe 获取用户资料
+    let stripe = get_stripe_profile(&client, auth_token, is_pri).await?;
+
+    // 映射响应数据到 TokenProfile
+    Some(TokenProfile {
+        usage,
+        user,
+        stripe,
+    })
+}
+
 pub async fn get_stripe_profile(
     client: &Client,
     auth_token: &str,
     is_pri: bool,
 ) -> Option<StripeProfile> {
-    // 直接返回固定的enterprise会员类型
-    Some(StripeProfile {
-        membership_type: crate::common::model::userinfo::MembershipType::Enterprise,
-        payment_id: None,
-        days_remaining_on_trial: 0,
-    })
+    let client = super::client::build_profile_request(client, auth_token, is_pri);
+    let response = client
+        .send()
+        .await
+        .ok()?
+        .json::<StripeProfile>()
+        .await
+        .ok()?;
+    Some(response)
 }
 
 pub async fn get_user_profile(
@@ -137,54 +176,6 @@ pub async fn get_user_profile(
     let user_profile = client.send().await.ok()?.json::<UserProfile>().await.ok()?;
 
     Some(user_profile)
-}
-
-pub async fn get_token_profile(
-    client: Client,
-    auth_token: &str,
-    is_pri: bool,
-) -> Option<TokenProfile> {
-    let user_id = extract_user_id(auth_token)?;
-
-    // 获取用户资料
-    let user = get_user_profile(&client, auth_token, is_pri).await?;
-
-    // 获取Stripe资料（固定为enterprise）
-    let stripe = get_stripe_profile(&client, auth_token, is_pri).await?;
-
-    // 创建固定用量为0的UsageProfile
-    let now = chrono::Local::now();
-    let usage = UsageProfile {
-        premium: crate::common::model::userinfo::ModelUsage {
-            num_requests: 0,
-            total_requests: Some(0),
-            num_tokens: 0,
-            max_requests: Some(0),
-            max_tokens: Some(0),
-        },
-        standard: crate::common::model::userinfo::ModelUsage {
-            num_requests: 0,
-            total_requests: Some(0),
-            num_tokens: 0,
-            max_requests: Some(0),
-            max_tokens: Some(0),
-        },
-        unknown: crate::common::model::userinfo::ModelUsage {
-            num_requests: 0,
-            total_requests: Some(0),
-            num_tokens: 0,
-            max_requests: Some(0),
-            max_tokens: Some(0),
-        },
-        start_of_month: now,
-    };
-
-    // 映射响应数据到 TokenProfile
-    Some(TokenProfile {
-        usage,
-        user,
-        stripe,
-    })
 }
 
 pub async fn get_available_models(
@@ -285,11 +276,37 @@ pub async fn get_token_usage(
     is_pri: bool,
     usage_uuid: String,
 ) -> Option<Usage> {
-    // 直接返回固定用量为0的Usage对象
+    let response = {
+        let trace_id = uuid::Uuid::new_v4().to_string();
+        let client = super::client::build_request(super::client::AiServiceRequest {
+            client,
+            auth_token: &auth_token,
+            checksum: &checksum,
+            client_key: &client_key,
+            url: cursor_api2_token_usage_url(is_pri),
+            is_stream: false,
+            timezone,
+            trace_id: &trace_id,
+            is_pri,
+        });
+        let request = GetTokenUsageRequest { usage_uuid };
+        client
+            .body(encode_message(&request, false).unwrap())
+            .send()
+            .await
+            .ok()?
+            .bytes()
+            .await
+            .ok()?
+    };
+    let token_usage = GetTokenUsageResponse::decode(response.as_ref()).ok()?;
+    let prompt_tokens = token_usage.input_tokens;
+    let completion_tokens = token_usage.output_tokens;
+    let total_tokens = prompt_tokens + completion_tokens;
     Some(Usage {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
     })
 }
 
