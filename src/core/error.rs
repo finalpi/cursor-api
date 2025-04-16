@@ -137,6 +137,7 @@ pub enum StreamError {
     ChatError(ChatError),
     DataLengthLessThan5,
     EmptyStream,
+    RateLimitExceeded,
 }
 
 impl std::fmt::Display for StreamError {
@@ -145,6 +146,7 @@ impl std::fmt::Display for StreamError {
             StreamError::ChatError(error) => write!(f, "{}", error.error.code),
             StreamError::DataLengthLessThan5 => write!(f, "data length less than 5"),
             StreamError::EmptyStream => write!(f, "empty stream"),
+            StreamError::RateLimitExceeded => write!(f, "rate limit exceeded but continuing"),
         }
     }
 }

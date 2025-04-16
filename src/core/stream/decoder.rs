@@ -152,7 +152,7 @@ impl StreamDecoder {
 
     #[inline]
     pub fn is_first_result_ready(&self) -> bool {
-        self.first_result_ready
+        self.first_result.is_some() && self.buffer.is_empty() && !self.first_result_taken
     }
 
     #[inline]
@@ -297,8 +297,7 @@ impl StreamDecoder {
         if !self.first_result_ready {
             self.first_result_ready = self.first_result.is_some()
                 && self.buffer.is_empty()
-                && !self.first_result_taken
-                && self.has_seen_content;
+                && !self.first_result_taken;
         }
         Ok(messages)
     }
@@ -374,6 +373,10 @@ impl StreamDecoder {
         if let Ok(text) = String::from_utf8(msg_data.to_vec()) {
             // crate::debug_println!("[text] JSON消息 [hex: {}]: {}", hex::encode(msg_data), text);
             if let Ok(error) = serde_json::from_str::<ChatError>(&text) {
+                // 检查是否是速率限制相关错误
+                if error.error.code.contains("RATE_LIMIT") {
+                    return Err(StreamError::RateLimitExceeded);
+                }
                 return Err(StreamError::ChatError(error));
             }
         }
@@ -392,6 +395,10 @@ impl StreamDecoder {
             if let Ok(text) = String::from_utf8(text) {
                 // crate::debug_println!("[gzip] JSON消息 [hex: {}]: {}", hex::encode(msg_data), text);
                 if let Ok(error) = serde_json::from_str::<ChatError>(&text) {
+                    // 检查是否是速率限制相关错误
+                    if error.error.code.contains("RATE_LIMIT") {
+                        return Err(StreamError::RateLimitExceeded);
+                    }
                     return Err(StreamError::ChatError(error));
                 }
             }
