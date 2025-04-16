@@ -374,8 +374,7 @@ impl StreamDecoder {
             // crate::debug_println!("[text] JSON消息 [hex: {}]: {}", hex::encode(msg_data), text);
             if let Ok(error) = serde_json::from_str::<ChatError>(&text) {
                 // 检查是否是速率限制相关错误
-                let error_response = error.into_error_response();
-                if error_response.code.contains("RATE_LIMIT") {
+                if error.error.code.contains("RATE_LIMIT") {
                     return Err(StreamError::RateLimitExceeded);
                 }
                 return Err(StreamError::ChatError(error));
@@ -397,8 +396,7 @@ impl StreamDecoder {
                 // crate::debug_println!("[gzip] JSON消息 [hex: {}]: {}", hex::encode(msg_data), text);
                 if let Ok(error) = serde_json::from_str::<ChatError>(&text) {
                     // 检查是否是速率限制相关错误
-                    let error_response = error.into_error_response();
-                    if error_response.code.contains("RATE_LIMIT") {
+                    if error.error.code.contains("RATE_LIMIT") {
                         return Err(StreamError::RateLimitExceeded);
                     }
                     return Err(StreamError::ChatError(error));

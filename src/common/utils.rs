@@ -18,12 +18,14 @@ use crate::{
         constant::{COMMA, FALSE, TRUE},
         lazy::{
             TOKEN_DELIMITER, USE_COMMA_DELIMITER, cursor_api2_chat_models_url,
+            cursor_api2_token_usage_url,
         },
         model::proxy_pool::ProxyPool,
     },
     core::{
         aiserver::v1::{
-            AvailableModelsRequest, AvailableModelsResponse,
+            AvailableModelsRequest, AvailableModelsResponse, GetTokenUsageRequest,
+            GetTokenUsageResponse,
         },
         config::key_config,
         constant::{
@@ -109,9 +111,9 @@ impl TrimNewlines for String {
 }
 
 pub async fn get_stripe_profile(
-    _client: &Client,
-    _auth_token: &str,
-    _is_pri: bool,
+    client: &Client,
+    auth_token: &str,
+    is_pri: bool,
 ) -> Option<StripeProfile> {
     // 直接返回固定的enterprise会员类型
     Some(StripeProfile {
@@ -126,10 +128,10 @@ pub async fn get_user_profile(
     auth_token: &str,
     is_pri: bool,
 ) -> Option<UserProfile> {
-    let _user_id = extract_user_id(auth_token)?;
+    let user_id = extract_user_id(auth_token)?;
 
     // 构建请求客户端
-    let client = super::client::build_userinfo_request(client, &_user_id, auth_token, is_pri);
+    let client = super::client::build_userinfo_request(client, &user_id, auth_token, is_pri);
 
     // 发送请求并获取响应
     let user_profile = client.send().await.ok()?.json::<UserProfile>().await.ok()?;
@@ -275,13 +277,13 @@ pub async fn get_available_models(
 }
 
 pub async fn get_token_usage(
-    _client: Client,
-    _auth_token: String,
-    _checksum: String,
-    _client_key: String,
-    _timezone: &'static str,
-    _is_pri: bool,
-    _usage_uuid: String,
+    client: Client,
+    auth_token: String,
+    checksum: String,
+    client_key: String,
+    timezone: &'static str,
+    is_pri: bool,
+    usage_uuid: String,
 ) -> Option<Usage> {
     // 直接返回固定用量为0的Usage对象
     Some(Usage {
